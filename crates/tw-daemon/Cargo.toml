@@ -1,0 +1,40 @@
+[package]
+name = "tw-daemon"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "tempo-watchtower"
+path = "src/main.rs"
+
+[dependencies]
+tw-core.workspace = true
+tw-chain.workspace = true
+alloy.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+redb.workspace = true
+axum.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+tower.workspace = true
+http-body-util.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
+
+[lints]
+workspace = true
