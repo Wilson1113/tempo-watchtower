@@ -1,0 +1,8 @@
+/target
+.env
+*.redb
+runs/
+*.log
+keys/
+.DS_Store
+.idea/
