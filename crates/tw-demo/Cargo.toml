@@ -1,0 +1,23 @@
+[package]
+name = "tw-demo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+tw-core.workspace = true
+tw-chain.workspace = true
+alloy.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+clap.workspace = true
+dotenvy.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest.workspace = true
+
+[lints]
+workspace = true
