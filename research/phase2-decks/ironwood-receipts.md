@@ -1,0 +1,134 @@
+# Ironwood Receipts — Pitch Deck (Phase 2)
+
+Prepared: 2026-09-25. Track: Zcash ($100k / 10 winners). Domain: Cryptography.
+Status legend: **VERIFIED-fresh** = fetched by this deck-builder agent, 2026-09-25. **VERIFIED-P1** = fetched by a Phase 1 scout, not re-fetched this session (trusted but not independently re-checked). **UNVERIFIED** = search-snippet or inference only, not page-fetched by anyone.
+
+---
+
+## 1. Title + one-liner
+
+**Ironwood Receipts**
+*A pure-Rust crate and CLI that turns "trust me" into a cryptographically-checkable receipt for a single Zcash shielded payment — without handing over a viewing key.*
+
+Alternate name considered: **zkreceipt** (used independently by the Phase 1 user-first scout for the same idea). We keep **Ironwood Receipts** as the working name because it names the exact protocol layer (Ironwood, the post-NU6.3 shielded pool) the product targets, which "zkreceipt" — a name that could describe almost any Zcash disclosure tool, Sapling included — does not. The crate/CLI binary name proposed below (`ironwood-receipt`) is deliberately more generic than the product name so it reads correctly on crates.io.
+
+---
+
+## 2. Problem statement
+
+**Who exactly hits this:** senders who made a real, mined Ironwood shielded payment and now need to *prove* one specific payment's recipient/amount/memo to a specific third party — without revealing anything else. Concretely: shielded merchants and payment-processor operators settling a "you never paid" dispute (the ZecHub "Accept Payments As A Merchant" persona); exchanges/OTC desks proving a shielded withdrawal actually landed at a customer's address; donors and NGOs proving a specific matched-donation transfer for audit/compliance. Phase 1's user-first scout sizes this population as "likely low thousands of active operators," reachable via forum.zcashcommunity.com, the ZecHub Discord/Substack, and r/zcash (VERIFIED-P1).
+
+**The gap, re-verified fresh this session (2026-09-25):**
+- ZIP 311 ("Zcash Payment Disclosures") text, fetched directly today: `Status: Draft`; `"TODO: Add support for Orchard."`; `"Reference implementation: TBD."` — https://zips.z.cash/zip-0311 (**VERIFIED-fresh**, unchanged from Phase 1's 2026-09-24/25 fetch). It has carried this status since it was opened on 2020-08-03 (tracking issue https://github.com/zcash/zips/issues/387, confirmed still open today, **VERIFIED-fresh** that it's open; comment history not re-verifiable through this session's read-only fetch).
+- Since then, Zcash sealed the Orchard pool entirely: NU6.3 ("Ironwood") activated 2026-07-28 after a counterfeiting bug in Orchard's proof circuit, opening a brand-new shielded pool (Ironwood) that receives all new shielded value, with Orchard closing via a turnstile (VERIFIED-P1, CoinDesk 2026-07-28 + shieldedlabs.net/ironwood/). ZIP 311's Sapling-only text is now stale for *any* current shielded transaction, not just Orchard ones — a strictly worse gap than when Phase 1 scored it.
+- **Today's two options for a sender, unchanged and confirmed no third option exists (see §8):** hand over a full viewing key (discloses the entire transaction history, not just one payment) or disclose nothing.
+- **The one funded attempt is not close.** ZCG grant application #437, "Zcash Selected-Payment Receipts SDK" ($42,000, applicant Joshua Kassabian / CopperSeventhLLC), re-fetched fresh today: status is still **"Open" / "👀 Ready For ZCG Review,"** seven ZCG committee members assigned as reviewers, no comments or activity beyond the original 2026-09-21 submission, and the milestone plan (assuming a Dec 1, 2026 kickoff) doesn't reach Milestone 1 until **2026-12-22** — after our 2026-10-12 deadline, and funding itself is still a prerequisite for kickoff (**VERIFIED-fresh**, https://github.com/ZcashCommunityGrants/zcashcommunitygrants/issues/437). Nothing has moved since Phase 1's research four days ago; if anything the "no work has started" signal is now slightly stronger (still zero comments after the initial post).
+
+---
+
+## 3. What we are
+
+**Ships as:** a Rust library crate — proposed name `ironwood-receipt` (crate-name availability not verified this session; a squatting/rename check should happen before submission) — plus a thin CLI binary with two subcommands:
+- `ironwood-receipt prove --txid <TXID> --action <N> --ovk <sender-OVK-or-keystore-ref> --claim recipient=<addr>,value=<zatoshi>,memo="<text>"` — run by the **sender**.
+- `ironwood-receipt verify --receipt <FILE> --server <lightwalletd/Zebra endpoint>` — run by **anyone**, including someone the sender does not trust and who holds no key material at all.
+
+**Core technical mechanism (composes existing, already-shipped audited primitives — no new cryptography):**
+1. *Recovery* (sender-side, requires the sender's Outgoing Viewing Key): the sender already possesses the OVK used to build the transaction. `orchard::Bundle::{recover_output_with_ovk, recover_outputs_with_ovks}` — a stable API, present before 0.15.0 and updated in the 0.15.0 release (2026-07-09) to read the bundle's own `BundleVersion` instead of a separately-supplied version argument — decrypts the `outCiphertext` for the target action and returns the note plaintext (recipient diversified address, value, memo, and note randomness). For Ironwood (V3) note plaintexts specifically, this recovery runs against `orchard::note_encryption::{IronwoodDomain, IronwoodNoteEncryption}`, which the changelog confirms shipped in the same 0.15.0 release ("matching `OrchardDomain` note-encryption behavior but accepting V3 note plaintexts during parsing") — **VERIFIED-fresh**, read directly from `github.com/zcash/orchard/blob/main/CHANGELOG.md` (raw source) today. Both `orchard` 0.15.0 and the current stable 0.15.5 (2026-08-02) are **released**, not pending — this is a stronger and more precise claim than Phase 1's summary, which didn't distinguish released-vs-unreleased CHANGELOG entries. (One caveat worth flagging honestly: a *PCZT-Action-level* convenience wrapper, `orchard::pczt::Action::recover_output_with_ovk`, is still listed under `## [Unreleased]` in the same changelog — but our use case recovers from a fully-mined bundle fetched by txid, not from an in-progress PCZT, so the already-released `Bundle`-level API is the one we need.)
+2. *Receipt object*: `{txid, action_index, block_height/anchor, recovered_plaintext: {recipient_address, value, memo, note_randomness/rseed, note_commitment_derivation_inputs}, ephemeral_pubkey(epk)}`. This mirrors ZIP 311's Sapling disclosure design principle — ship enough plaintext + randomness that *any* party can recompute what's already public on-chain and compare — extended to Ironwood's V3 note format. **Flag: this receipt-object layout is our own proposed design, not a quote from ZIP 311 text**, since the ZIP's Orchard/Ironwood section is the explicit unfinished TODO; we are filling that gap, not reproducing a finished spec.
+3. *Independent verification* (no secret key required at all): the verifier fetches the mined transaction by `txid` from a lightwalletd/Zebra endpoint via `zcash_client_backend` (current stable 0.24.0, released 2026-08-19, **VERIFIED-fresh** via crates.io API), extracts the on-chain note commitment `cmx` and ciphertext for `action_index`, then independently (a) recomputes the note commitment from the receipt's claimed plaintext fields and checks it equals the on-chain `cmx`, and (b) re-derives the same shared secret from `epk` and re-encrypts the claimed plaintext, checking it reproduces the on-chain ciphertext bytes. A bit-for-bit match proves the claim without the verifier ever holding an OVK, IVK, or spend key — and without disclosing anything about the sender's other transactions. This is the concrete answer to "how does the verifier independently re-derive it from chain data."
+4. **Why pure Rust matters here, specifically:** every primitive above (`orchard`, `zcash_note_encryption`, `zcash_client_backend`) is itself audited Rust with no safe non-Rust equivalent library ecosystem; a wrapper in another language would either re-implement note-commitment/encryption logic (reintroducing exactly the audit risk Zcash just got burned by with the Orchard counterfeiting bug) or FFI-bind these crates anyway. The CLI/daemon *is* the product — there is no separate web backend.
+
+**Who's building this (minimal, per instructions):** solo builder, submitting individually to Colosseum's Crypto World's Fair; no further founder-fit narrative is claimed for this pitch.
+
+---
+
+## 4. Tech demo (3-minute video, minute-by-minute)
+
+- **0:00–0:30 — The gap, on screen.** Split screen: ZIP 311 spec page showing `Status: Draft` / `TODO: Add support for Orchard` / `Reference implementation: TBD`, next to a Zashi or Zallet send screen. Voiceover: "This spec has said this since 2020. Zcash just sealed Orchard and opened a new pool. Nothing implements this for any current transaction."
+- **0:30–1:00 — The only alternative today.** Show what "prove a payment" currently requires: exporting/typing a full viewing key into a block explorer or wallet import flow, revealing the entire transaction history on screen (blur the unrelated txs for effect) to make the over-disclosure visceral.
+- **1:00–1:20 — Make the real payment.** From a funded testnet (or mainnet, if budget allows) wallet, send a real Ironwood shielded payment to a demo "merchant" Orchard/Ironwood address with a memo (e.g., "Invoice #4821"). Let it get 1+ confirmation on screen.
+- **1:20–2:00 — `ironwood-receipt prove`.** Sender runs the CLI with the txid and their OVK; terminal shows the recovered fields and writes a compact receipt file (show its size — a few hundred bytes to a couple KB, not a viewing key). Cut to `ironwood-receipt verify` run by a *second, unprivileged* terminal/machine that has never seen any key material — only the receipt file and a public lightwalletd endpoint.
+- **2:00–2:30 — Independent confirmation on live chain data.** Verifier output: `CONFIRMED: 0.5 ZEC to <addr>, memo "Invoice #4821", N confirmations, cmx matches on-chain commitment, ciphertext matches on-chain bytes.` Emphasize on screen that this ran against a live/testnet endpoint, not a canned fixture.
+- **2:30–2:50 — The tamper test.** Feed the verifier a receipt with one field altered (wrong amount); show it fail loudly (`MISMATCH: claimed value does not match on-chain commitment`) — this single moment is the most important 10 seconds of the demo for the Functionality/Novelty judging criteria, because it proves the check is real cryptographic verification, not just "trust the CLI output."
+- **2:50–3:00 — Close.** One line on screen: "No viewing key. No trust. One payment, proven." Repo/crate link.
+
+---
+
+## 5. Business model
+
+- **Core distribution: open-source (MIT/Apache-2.0) crate + CLI**, free — this is required for the Open-source judging criterion and for adoption; a disclosure tool nobody can audit defeats its own purpose.
+- **Who pays, and for what:** not the individual sender (a one-off CLI run has no natural per-use price point for a low-thousands-sized user base). Revenue centers on the *repeat, integrated* users named in the problem statement:
+  - **Hosted verification API**: a small hosted service (itself a thin Rust HTTP wrapper around the same verifier logic) that exchanges, OTC desks, and payment processors can call from their own withdrawal/checkout/dispute-resolution flows instead of shelling out to a CLI. Priced per verification call or as a low monthly infra fee (e.g., in the $50–500/mo range for a small processor) — realistic because the target customers (CipherPay, ZGo, BTCPay-Server's Zcash plugin, exchange withdrawal desks) already run server-side infra and would rather call an API than embed a CLI.
+  - **Paid integration work**: fixed-fee contracts to wire "generate receipt" / "verify receipt" buttons into existing shielded wallets (Zashi/Zodl, Ywallet, ZGo) and processors — a services line, not a product-license line, matched to a market that is genuinely low-thousands of operators rather than mass-market.
+  - **Grant-adjacent path**: this problem already has a live $42,000 ZCG grant application (#437) describing near-identical scope. If Ironwood Receipts ships a working MVP before the grant committee approves/funds #437, the credible path is to either (a) apply for a *smaller, later* ZCG maintenance/extension grant once a working implementation already exists (a much stronger application than a proposal with no code), or (b) engage directly with the #437 applicant/committee — this is a real, named funding body, not a hypothetical one, which is unusually concrete for a "business model" section at hackathon stage.
+- **Honest caveat for judges' Business Plan criterion**: the total addressable market here is deliberately small and named (per the brief's own "niche, specific, big-co-neglect" strategy) — this is a defensible, fundable niche tool, not a billion-dollar SaaS. That is the intended shape of the pitch, not a weakness to hide.
+
+---
+
+## 6. Startup methodology
+
+On hold — to be filled in later.
+
+---
+
+## 7. Track fit & judging-criteria mapping
+
+Official criteria, verbatim from the brief (00-brief.md §8):
+
+| Criterion | One-line mapping |
+|---|---|
+| **(a) Functionality** | Composes only stable, released, audited APIs (`orchard` 0.15.x, `zcash_client_backend` 0.24.0) — no novel crypto to get subtly wrong; the tamper-test demo moment (§4) proves the verification path actually checks cryptographic commitments, not just CLI output text. |
+| **(b) Potential Impact** | TAM is intentionally narrow and named (low-thousands of shielded merchants/processors/exchanges/NGOs) rather than inflated — but the *protocol-level* impact is real: this fills a six-year-old open spec gap (ZIP 311) that Zcash's own community has just started funding separately (ZCG #437), so shipping first has ecosystem-level significance beyond the immediate user count. |
+| **(c) Novelty** | Zero GitHub repos found this session implementing ZIP 311 for Orchard/Ironwood or any Orchard-era payment-disclosure tool at all (see §8) — this is not a differently-packaged version of something that exists. |
+| **(d) UX** | The blockchain-native UX win is precise, minimal disclosure: a merchant/exchange gets a cryptographically-checkable answer to "did this specific payment happen as claimed" without the sender ever exposing a viewing key or unrelated history — turning an all-or-nothing trust decision into a one-payment, no-trust-required check. |
+| **(e) Open-source** | MIT/Apache-2.0 core; composes directly with `orchard`, `zcash_note_encryption`, and `zcash_client_backend` rather than reimplementing any cryptography — a textbook "composes with other primitives" story. |
+| **(f) Business Plan** | See §5: a named, reachable paying customer set (exchanges/processors via hosted verification API + integration contracts) plus a concrete, real funding body (ZCG) already validating the problem's fundability independent of this submission. |
+
+**Strategic angle vs. the expected Zcash-track flood:** Colosseum co-founder Matty Taylor stated on the Zcash community forum (2026-09-03) that he'd expect "most of the products will be utilizing ZEC the asset" in this first Zcash-track competition, and Zcash community member strahncryptography warned in the same thread of a flood of "payment rail neutral" submissions or "projects built for BTC/ETH with simple rebranding" (both **VERIFIED-P1**, hackathon-intel scout, forum.zcashcommunity.com/t/grant-proposal-colosseum-hackathon-zcash-track/57405 — not re-fetched this session). Ironwood Receipts is the opposite of that pattern by construction: it requires touching Orchard/Ironwood's actual note-encryption and bundle-version internals (not just "accept ZEC as a payment method"), and this deck's technical mechanism (§3) is specific enough — named crate APIs, named release versions, a concrete verifier algorithm — that shallow familiarity with Zcash could not have produced it. That specificity *is* the differentiation strategy for this track.
+
+---
+
+## 8. Competitive scan (for the verifier)
+
+Every adjacent/competing project found, Phase 1 or fresh, with a one-line "why it doesn't fully solve this":
+
+| Project | Link | Status (fresh check, 2026-09-25) | Why it doesn't fully solve this |
+|---|---|---|---|
+| **ZCG grant #437 — "Zcash Selected-Payment Receipts SDK"** | https://github.com/ZcashCommunityGrants/zcashcommunitygrants/issues/437 | **VERIFIED-fresh**: still "Open"/"Ready For ZCG Review," zero new comments since 2026-09-21, Milestone 1 not due until 2026-12-22, funding is a kickoff prerequisite. Same near-identical scope as this pitch. | Unbuilt as of today; earliest possible delivery is after our 2026-10-12 deadline even if approved immediately. **This is the single biggest risk to this pitch's whitespace claim** — it is the same idea, from a named applicant, already in the funding pipeline. Our only edge is shipping a working MVP first. |
+| **ZIP 311 tracking issue #387** | https://github.com/zcash/zips/issues/387 | **VERIFIED-fresh**: still open (opened 2020-08-03) | Confirms the gap is protocol-acknowledged and still unresolved; not itself an implementation. |
+| **Zallet** (ECC's zcashd-wallet replacement, Rust) | https://github.com/zcash/wallet | **VERIFIED-fresh**: README fetched directly, no mention of payment disclosure, ZIP 311, or receipt/proof functionality anywhere. | Full-node wallet backend, not a disclosure/verification tool; doesn't touch this problem at all. |
+| **Ywallet** (hhanh00) | https://github.com/hhanh00/ywallet | **VERIFIED-fresh**: README fetched, no mention of disclosure/ZIP 311/receipts. | Consumer mobile wallet; can view your own decrypted history in-app, produces no portable third-party-verifiable disclosure. |
+| **Zingolib / Zingo CLI** | https://github.com/zingolabs/zingolib | **VERIFIED-fresh**: README fetched, no mention of disclosure/ZIP 311/receipts. | Light-client indexer/API for app consumption; same gap as above. |
+| **Zashi (Android/iOS) / Zodl** | https://github.com/Electric-Coin-Company/zashi-android | **VERIFIED-fresh**: README fetched ("Zodl... no-frills Zcash mobile wallet"), no mention of disclosure/ZIP 311/receipts. | Consumer wallet UX focus; ECC's own team is occupied with zcashd EOL / Ironwood / NU7, not payment disclosures (matches Phase 1's "why big players won't do it" reasoning). |
+| **Legacy `zcashd` `z_getpaymentdisclosure`/`z_validatepaymentdisclosure` RPCs** | zcashd (deprecated) | VERIFIED-P1 | Sprout-only, experimental, and deprecated with zcashd's own July-2026 end-of-support — cannot address any current shielded pool. |
+| **GitHub search, fresh this session, for "zip311", "zip-311", "zcash payment disclosure", "zcash receipt shielded", "orchard receipt proof payment"** | (search queries, not a single link) | **VERIFIED-fresh**: 0 relevant repos for "zip311"/"zip-311"/"orchard+receipt+proof+payment"/"zcash+receipt+shielded"; the one hit for "zcash+payment+disclosure" is `Fmstrat/zcashd`, a 2018 Docker image bundling zcashd's since-deprecated Sprout-only disclosure RPCs, last touched 2018-12-27. | Confirms Phase 1's whitespace finding with an independent fresh search; nothing found targets Orchard/Ironwood disclosure. |
+| **`Happydao/Orchard-Integrity-Monitor`, `Happydao/zcash-shielded-observatory`** (both pushed 2026-09-25, likely other current hackathon entrants) | https://github.com/Happydao/Orchard-Integrity-Monitor | **VERIFIED-fresh**: README fetched — a public *pool-level* supply/accounting dashboard (aggregate ZEC across value pools), explicitly notes "Private Orchard notes are not publicly visible." | Aggregate/public-supply monitoring, not per-transaction sender-side disclosure; different problem entirely, but signals the Zcash track is already attracting other Ironwood-aware Rust-adjacent submissions this week — worth watching, not treating as solved competition. |
+| **`IhorMuliar/zenvelope`** (pushed 2026-09-25) | https://github.com/IhorMuliar/zenvelope | **VERIFIED-fresh**: README fetched — sends shielded ZEC via a non-custodial browser link, explicitly privacy-maximizing/non-disclosing. | Directly the opposite goal (hiding a payment, not proving one) — not a competitor, but shows this week's Zcash-track submission pool includes real Ironwood technical depth, not only shallow "ZEC the asset" wrappers. |
+
+**Self-critique — what gives me pause about the whitespace claim:**
+1. **ZCG #437 is the real risk, not a formality.** It's the same product, from a named, real applicant, already through initial triage ("Ready For ZCG Review") with seven reviewers assigned. If the ZCG committee fast-tracks approval and the applicant starts building in parallel (nothing in the public issue rules that out — "no evidence work has begun" is not the same as "guaranteed not to begin"), our "ship first" edge shrinks. Timeline has **not** moved since Phase 1 (re-verified today, still zero comments, still same milestone dates) — so the risk is unchanged, not worsening, but it is not gone either.
+2. **I could not get GitHub's code-search (not just repo-search) to return unauthenticated results** for cross-checking whether ZIP 311 keywords appear *inside* files of large repos (e.g., a half-finished branch in `librustzcash` or a wallet fork) rather than in repo names/descriptions — repo-name/description search is a real but incomplete substitute. This is a genuine gap in this session's verification, not a confirmed "nothing exists."
+3. **The receipt-object design in §3 is our own synthesis**, not a verified spec or an existing shipped design — flagged explicitly there and in §9. A downstream verifier should treat the *cryptographic composability claim* (the primitives exist and are released) as solid, but the *exact receipt encoding* as a design proposal, not a fact.
+
+---
+
+## 9. Evidence appendix
+
+| # | Claim | Source | Status |
+|---|---|---|---|
+| 1 | ZIP 311 status is "Draft"; contains "TODO: Add support for Orchard"; "Reference implementation: TBD" | https://zips.z.cash/zip-0311 | **VERIFIED-fresh** (fetched 2026-09-25, this session) |
+| 2 | ZIP 311 tracking issue #387 (Orchard/selective-disclosure) opened 2020-08-03 by daira, still open | https://github.com/zcash/zips/issues/387 | **VERIFIED-fresh** (open status confirmed; full comment thread not retrievable via this session's fetch tool) |
+| 3 | Ironwood (NU6.3) activated 2026-07-28, sealed Orchard pool via turnstile after a counterfeiting bug in Orchard's proof circuit | CoinDesk 2026-07-28; shieldedlabs.net/ironwood/ | **VERIFIED-P1** (not re-fetched this session) |
+| 4 | zcashd reached final End-of-Support July 2026; legacy `z_getpaymentdisclosure` RPCs deprecated, Sprout-only | ZecHub `Payment_Disclosures.md` (PR #2090, merged 2026-09-20 per Phase 1) | **VERIFIED-P1** — this session attempted to re-fetch the raw file directly and got HTTP 404 (likely a path/branch mismatch, not evidence the doc is gone); treat as unconfirmed this session, not contradicted |
+| 5 | `orchard` crate stable releases: 0.15.0 (2026-07-09) through 0.15.5 (2026-08-02); 0.15.0 added `orchard::note_encryption::{IronwoodDomain, IronwoodNoteEncryption}` and updated `orchard::Bundle::{recover_output_with_ovk, recover_outputs_with_ovks}` to use the bundle's own `BundleVersion` | https://raw.githubusercontent.com/zcash/orchard/main/CHANGELOG.md (fetched raw, read directly by this agent); crates.io API for version list | **VERIFIED-fresh** |
+| 6 | `orchard::pczt::Action::recover_output_with_ovk` (a PCZT-specific convenience wrapper distinct from the Bundle-level API above) is listed under `[Unreleased]`, i.e. not yet shipped | same CHANGELOG.md raw fetch | **VERIFIED-fresh** |
+| 7 | `zcash_client_backend` current stable version 0.24.0, released 2026-08-19 | https://crates.io/api/v1/crates/zcash_client_backend | **VERIFIED-fresh** |
+| 8 | ZCG grant #437 ("Zcash Selected-Payment Receipts SDK," $42,000, applicant Joshua Kassabian/CopperSeventhLLC) still "Open"/"Ready For ZCG Review" as of 2026-09-25, no comments since submission, Milestone 1 due 2026-12-22, 7 reviewers assigned, funding is kickoff prerequisite | https://github.com/ZcashCommunityGrants/zcashcommunitygrants/issues/437 | **VERIFIED-fresh** |
+| 9 | GitHub repo search for "zip-311"/"zip311"/"zcash+receipt+shielded"/"orchard+receipt+proof+payment" returns 0 relevant repos; "zcash+payment+disclosure" returns only a 2018 Sprout-only Docker image (`Fmstrat/zcashd`) | GitHub Search API (repository search), fetched via this session's Bash tool | **VERIFIED-fresh**, with the caveat that unauthenticated code-search (inside file contents) could not be run — repo-level search only |
+| 10 | Zallet, Ywallet, Zingolib, Zashi/Zodl READMEs contain no mention of ZIP 311, payment disclosure, or receipt/proof-of-payment functionality | https://github.com/zcash/wallet ; https://github.com/hhanh00/ywallet ; https://github.com/zingolabs/zingolib ; https://github.com/Electric-Coin-Company/zashi-android | **VERIFIED-fresh** (README-level check only; not an exhaustive code audit) |
+| 11 | Two other Zcash/Ironwood-related repos (`Happydao/Orchard-Integrity-Monitor`, `Happydao/zcash-shielded-observatory`, `IhorMuliar/zenvelope`) were pushed 2026-09-25 (today), likely other hackathon entrants; neither overlaps with per-transaction sender-side disclosure | https://github.com/Happydao/Orchard-Integrity-Monitor ; https://github.com/IhorMuliar/zenvelope | **VERIFIED-fresh** |
+| 12 | Matty Taylor (Colosseum co-founder) expects most Zcash-track submissions to be "ZEC the asset"; strahncryptography warns of a flood of rebranded BTC/ETH projects | forum.zcashcommunity.com/t/grant-proposal-colosseum-hackathon-zcash-track/57405, 2026-09-03 | **VERIFIED-P1** (not re-fetched this session) |
+| 13 | Niche user population ("likely low thousands of active operators") and their gathering places (forum.zcashcommunity.com, ZecHub Discord/Substack, r/zcash) | Phase 1 cryptography scout, C1 | **VERIFIED-P1** (size estimate is the scout's own inference, not a cited count — treat as soft) |
+| 14 | The receipt-object design (fields, commitment/ciphertext recomputation as the independent-verification mechanism) described in §3 | This deck's own synthesis, combining ZIP 311's Sapling disclosure design principle with the `orchard`/`zcash_note_encryption` APIs verified in #5–#7 | **Proposed design — not a verified spec or existing implementation.** Flagged explicitly so a downstream reviewer does not mistake it for confirmed spec text. |
+| 15 | Business-model pricing figures ($50–500/mo hosted API estimate) | Not sourced from any comparable published pricing; this agent's own order-of-magnitude estimate for a low-thousands-operator niche market | **UNVERIFIED / estimate only** — flagged, not to be treated as researched market pricing |
+

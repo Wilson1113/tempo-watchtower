@@ -2,7 +2,6 @@
 use std::{fs, path::Path};
 
 use alloy::{primitives::B256, signers::local::PrivateKeySigner};
-use anyhow::Context;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
@@ -100,12 +99,7 @@ fn fill_env(contents: &str, mut gen_value: impl FnMut(&str) -> Generated) -> (St
 }
 
 fn keygen(path: &Path) -> anyhow::Result<()> {
-    let before = match fs::read_to_string(path) {
-        Ok(content) => content,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => String::new(),
-        Err(e) => return Err(e).context("Failed to read existing keygen file safely"),
-    };
-
+    let before = fs::read_to_string(path).unwrap_or_default();
     let (after, report) = fill_env(&before, generate);
     fs::write(path, after)?;
     #[cfg(unix)]

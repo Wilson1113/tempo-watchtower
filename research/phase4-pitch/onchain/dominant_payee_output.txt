@@ -1,0 +1,11 @@
+dominant payee resolved close requests: 213
+  2026-06 H1 answered 0 unanswered 96
+  2026-06 H2 answered 0 unanswered 28
+  2026-07 H1 answered 0 unanswered 61
+  2026-07 H2 answered 0 unanswered 1
+  2026-08 H1 answered 0 unanswered 2
+  2026-08 H2 answered 5 unanswered 10
+  2026-09 H1 answered 4 unanswered 3
+  2026-09 H2 answered 2 unanswered 1
+first answered: 2026-08-22 14:14:58
+since first answer: answered 11 unanswered 8

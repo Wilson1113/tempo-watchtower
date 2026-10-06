@@ -1,0 +1,22 @@
+[package]
+name = "tw-chain"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tw-core.workspace = true
+alloy.workspace = true
+tempo-alloy.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true
+futures.workspace = true
+
+[lints]
+workspace = true

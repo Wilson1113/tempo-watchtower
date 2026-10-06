@@ -1,0 +1,2 @@
+Payees with >=1 resolved close request: 16; answering some: 6 (0xca4e,0xa1024,0xfbb2b,0x516a4,0x7257c,0x39458); answering none: 10.
+All 44 of the dominant payee's $25/$0-settled refunds: payer 0xa1024faf... (itself a payee). Payers 0xa1024faf + 0x516a449f = 99% of dominant payee's forced refunds; both are payees.

@@ -1,0 +1,6 @@
+forced withdraws 343 distinct payees affected 15 [('0xca4e835f803cb0b7c428222b3a3b98518d4779fe', 213), ('0xa1024faf6ba6e4e0dfc8654c5b68db16fc23ad09', 37), ('0xd7724ae1d654ddce219b5c1ce4d93d5d9b9c682d', 25), ('0x8fa8dc02552dadb15273d2a06f95e4086302f82a', 16), ('0xfbb2b3101ca6b24a56436534a1849270548db264', 16), ('0xe447b692024f42f58356a35a3cf3ae3ef8831bf9', 12)]
+forced withdraws on channels with >=1 prior settle (service provably used): 68  refunded $ 129.585397
+forced withdraws on channels that HAD an operator set: 73
+first channel event 2026-06-10 00:19  last 2026-09-26 23:56
+forced withdraw dates: first 2026-06-10 last 2026-09-26
+channels opened (excl. dominant payee) per ~1.2M-block bucket: [12, 19, 384, 401, 162, 221, 262, 68, 112, 71, 28, 28, 16, 62]

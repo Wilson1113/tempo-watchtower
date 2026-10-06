@@ -1,0 +1,54 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/YOUR_GH_USER/tempo-watchtower"
+
+[workspace.dependencies]
+# Tempo + Ethereum plumbing
+alloy = { version = "2.5", default-features = false, features = ["std", "essentials", "reqwest-rustls-tls", "provider-ws", "eip712", "sol-types"] }
+alloy-primitives = { version = "1.6", features = ["serde", "k256"] }
+alloy-sol-types = "1.7"
+tempo-alloy = "1.11"
+# async
+tokio = { version = "1.53", features = ["full"] }
+tokio-util = "0.7.19"
+futures = "0.3.34"
+# errors / logging / config / cli
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter", "json"] }
+clap = { version = "4.6", features = ["derive", "env"] }
+dotenvy = "0.15.7"
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+# storage + http
+redb = "4.3"
+axum = "0.8.9"
+reqwest = { version = "0.13.5", default-features = false, features = ["json", "rustls"] }
+# tests
+proptest = "1.11"
+tempfile = "3.27"
+tower = { version = "0.5.3", features = ["util"] }
+http-body-util = "0.1.5"
+
+# local crates (the version keeps cargo-deny's wildcard check happy)
+tw-core  = { path = "crates/tw-core",  version = "0.1.0" }
+tw-chain = { path = "crates/tw-chain", version = "0.1.0" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+overflow-checks = true

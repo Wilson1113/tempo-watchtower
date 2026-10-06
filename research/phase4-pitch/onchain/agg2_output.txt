@@ -1,0 +1,6 @@
+{'forced withdraw, NO payee-side response': 304, 'unresolved (no close yet)': 64, 'forced withdraw, but payee-side settled in grace (responded)': 39, 'closed by payee/operator': 1}
+no-response forced withdraws: 304 distinct payees 14
+  of which dominant payee: 202
+provably-used & unanswered: 29 payees 5 refunded $ 36.0
+refund per unanswered withdraw: median $ 0.499  max $ 25.0  total $ 1966.13
+operator channels 676 self-assigned (op==payee) 302 delegated 374 distinct delegated operators 37
